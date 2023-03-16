@@ -11,22 +11,9 @@ import (
 )
 
 type Retrier struct {
-	rn             RandomNumber
+	rn             RandomFunc
 	config         Configuration
 	retryBeforeMax int
-}
-
-type RandomNumber interface {
-	Int63n(n int64) int64
-}
-
-type randomNumber struct{}
-
-var _ RandomNumber = (*randomNumber)(nil)
-
-func (randomNumber) Int63n(n int64) int64 {
-	rand.Seed(time.Now().UnixNano())
-	return rand.Int63n(n)
 }
 
 // Configuration defines the settings for retrier
@@ -54,6 +41,9 @@ func (c Configuration) Validate() error {
 	return nil
 }
 
+// RandomFunc represents a function that returns a random number between the half open interval [0,n)
+type RandomFunc func(n int64) int64
+
 // Condition function returns a boolean value that decides if retrier should terminate.
 type Condition func() bool
 
@@ -64,15 +54,21 @@ const (
 	DefaultMaxInterval = time.Millisecond * 32000
 )
 
+// DefaultRandomFunc uses math/rand seeded with nanosecond precision
+var DefaultRandomFunc = func(n int64) int64 {
+	rand.Seed(time.Now().UnixNano())
+	return rand.Int63n(n)
+}
+
 // New creates a new retrier with the default configuration.
-// If rn is not provided, it will use the default RandomNumber.
-func New(config Configuration, rn RandomNumber) (*Retrier, error) {
+// If rn is not provided, it will use the default RandomNumberFunc.
+func New(config Configuration, rn RandomFunc) (*Retrier, error) {
 	if err := config.Validate(); err != nil {
 		return nil, err
 	}
 
 	if rn == nil {
-		rn = DefaultRandomNumber()
+		rn = DefaultRandomFunc
 	}
 
 	i := 0
@@ -87,12 +83,6 @@ func New(config Configuration, rn RandomNumber) (*Retrier, error) {
 		config:         config,
 		retryBeforeMax: i - 1,
 	}, nil
-}
-
-// DefaultRandomNumber returns the default RandomNumber interface that
-// uses math/rand seeded with nanosecond precision for random number generation
-func DefaultRandomNumber() RandomNumber {
-	return &randomNumber{}
 }
 
 // DefaultConfiguration returns the default configuration for retrier
@@ -204,8 +194,8 @@ func (r *Retrier) next(attempt int) time.Duration {
 	return jitter(r.rn, r.config.MinInterval, backoff)
 }
 
-func jitter(rn RandomNumber, min time.Duration, max time.Duration) time.Duration {
-	random := time.Duration(rn.Int63n(int64(max)))
+func jitter(rn RandomFunc, min time.Duration, max time.Duration) time.Duration {
+	random := time.Duration(rn(int64(max)))
 
 	if random <= min {
 		return min
