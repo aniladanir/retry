@@ -120,14 +120,16 @@ func (r *Retrier) RetryAsync(ctx context.Context, cond Condition, immediate bool
 
 func (r *Retrier) retry(ctx context.Context, cond Condition, ch chan<- struct{}, immediate bool) {
 	var (
-		timer   *time.Timer
+		ticker  *time.Ticker
 		attempt = 0
 	)
 
 	defer func() {
 		close(ch)
-		timer.Stop()
+		ticker.Stop()
 	}()
+
+	ticker = time.NewTicker(1)
 
 	if immediate {
 		if cond() {
@@ -136,12 +138,12 @@ func (r *Retrier) retry(ctx context.Context, cond Condition, ch chan<- struct{},
 	}
 
 	for {
-		timer = time.NewTimer(r.next(attempt))
+		ticker.Reset(r.next(attempt))
 
 		select {
 		case <-ctx.Done():
 			return
-		case <-timer.C:
+		case <-ticker.C:
 			if cond() {
 				return
 			}
@@ -152,22 +154,24 @@ func (r *Retrier) retry(ctx context.Context, cond Condition, ch chan<- struct{},
 
 func (r *Retrier) retryAsync(ctx context.Context, cond Condition, ch chan<- struct{}, immediate bool) {
 	var (
-		timer   *time.Timer
+		ticker  *time.Ticker
 		attempt = 0
 	)
 
 	defer func() {
 		close(ch)
-		timer.Stop()
+		ticker.Stop()
 	}()
 
+	ticker = time.NewTicker(1)
+
 	if !immediate {
-		timer = time.NewTimer(r.next(attempt))
-		<-timer.C
+		ticker.Reset(r.next(attempt))
+		<-ticker.C
 	}
 
 	for {
-		timer = time.NewTimer(r.next(attempt))
+		ticker.Reset(r.next(attempt))
 
 		if cond() {
 			return
@@ -177,7 +181,7 @@ func (r *Retrier) retryAsync(ctx context.Context, cond Condition, ch chan<- stru
 		select {
 		case <-ctx.Done():
 			return
-		case <-timer.C:
+		case <-ticker.C:
 		}
 	}
 }
