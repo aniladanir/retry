@@ -168,6 +168,7 @@ func (r *Retrier) retryAsync(ctx context.Context, cond Condition, ch chan<- stru
 	if !immediate {
 		ticker.Reset(r.next(attempt))
 		<-ticker.C
+		attempt++
 	}
 
 	for {
