@@ -151,6 +151,7 @@ func (r *Retrier) retry(ctx context.Context, cond Condition, ch chan<- struct{},
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			ticker.Stop()
 			if cond() {
 				return
 			}
@@ -197,6 +198,7 @@ func (r *Retrier) retryAsync(ctx context.Context, cond Condition, ch chan<- stru
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			ticker.Stop()
 		}
 	}
 }
