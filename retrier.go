@@ -71,17 +71,18 @@ func New(config Configuration, rn RandomFunc) (*Retrier, error) {
 		rn = DefaultRandomFunc
 	}
 
-	i := 0
-	for ; ; i++ {
-		if intPow(2, i)*int(config.Base) > int(config.MaxInterval)/2 {
+	retryBeforeMax := 0
+	for {
+		if intPow(2, retryBeforeMax)*int(config.Base) > int(config.MaxInterval)/2 {
 			break
 		}
+		retryBeforeMax++
 	}
 
 	return &Retrier{
 		rn:             rn,
 		config:         config,
-		retryBeforeMax: i - 1,
+		retryBeforeMax: retryBeforeMax,
 	}, nil
 }
 
