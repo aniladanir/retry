@@ -129,7 +129,14 @@ func (r *Retrier) retry(ctx context.Context, cond Condition, ch chan<- struct{},
 		ticker.Stop()
 	}()
 
-	ticker = time.NewTicker(1)
+	ticker = time.NewTicker(time.Nanosecond)
+	ticker.Stop()
+
+	// drain ticker
+	select {
+	case <-ticker.C:
+	default:
+	}
 
 	if immediate {
 		if cond() {
@@ -163,7 +170,14 @@ func (r *Retrier) retryAsync(ctx context.Context, cond Condition, ch chan<- stru
 		ticker.Stop()
 	}()
 
-	ticker = time.NewTicker(1)
+	ticker = time.NewTicker(time.Nanosecond)
+	ticker.Stop()
+
+	// drain ticker
+	select {
+	case <-ticker.C:
+	default:
+	}
 
 	if !immediate {
 		ticker.Reset(r.next(attempt))
