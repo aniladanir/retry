@@ -1,6 +1,3 @@
-// Package retry contains an implementation of capped exponential backoff algorithm with full jitter.
-//
-// Reference: https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/
 package retry
 
 import (
