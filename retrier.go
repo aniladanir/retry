@@ -150,10 +150,10 @@ func (r *Retrier) retry(ctx context.Context, cond Condition, ch chan<- struct{},
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			ticker.Stop()
 			if cond() {
 				return
 			}
+			stopAndDrainTicker(ticker)
 			attempt++
 		}
 	}
