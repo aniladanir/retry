@@ -54,6 +54,10 @@ const (
 	DefaultMaxInterval = time.Millisecond * 32000
 )
 
+var newTicker = func(d time.Duration) *time.Ticker {
+	return time.NewTicker(d)
+}
+
 // DefaultRandomFunc uses math/rand seeded with nanosecond precision
 var DefaultRandomFunc = func(n int64) int64 {
 	rand.Seed(time.Now().UnixNano())
