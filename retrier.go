@@ -134,14 +134,8 @@ func (r *Retrier) retry(ctx context.Context, cond Condition, ch chan<- struct{},
 		ticker.Stop()
 	}()
 
-	ticker = time.NewTicker(time.Nanosecond)
-	ticker.Stop()
-
-	// drain ticker
-	select {
-	case <-ticker.C:
-	default:
-	}
+	ticker = newTicker(time.Nanosecond)
+	stopAndDrainTicker(ticker)
 
 	if immediate {
 		if cond() {
@@ -176,14 +170,8 @@ func (r *Retrier) retryAsync(ctx context.Context, cond Condition, ch chan<- stru
 		ticker.Stop()
 	}()
 
-	ticker = time.NewTicker(time.Nanosecond)
-	ticker.Stop()
-
-	// drain ticker
-	select {
-	case <-ticker.C:
-	default:
-	}
+	ticker = newTicker(time.Nanosecond)
+	stopAndDrainTicker(ticker)
 
 	if !immediate {
 		ticker.Reset(r.next(attempt))
@@ -203,7 +191,7 @@ func (r *Retrier) retryAsync(ctx context.Context, cond Condition, ch chan<- stru
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			ticker.Stop()
+			stopAndDrainTicker(ticker)
 		}
 	}
 }
@@ -241,4 +229,13 @@ func intPow(base int, exponent int) int {
 	}
 
 	return result
+}
+
+func stopAndDrainTicker(ticker *time.Ticker) {
+	ticker.Stop()
+
+	select {
+	case <-ticker.C:
+	default:
+	}
 }
