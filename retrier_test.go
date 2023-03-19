@@ -21,7 +21,7 @@ func TestRetry(t *testing.T) {
 		Immediate bool
 	}{
 		{
-			Name:      "should call the condition correct number of times and with exponentialy growing intervals",
+			Name:      "should call the condition correct number of times and with exponentially growing intervals",
 			trueAfter: 5,
 			Config: Configuration{
 				Base:        time.Millisecond * 10,
@@ -83,7 +83,7 @@ func TestRetry(t *testing.T) {
 			// create new retrier
 			retrier, err := New(tt.Config, rn)
 			if err != nil {
-				t.Fatalf("error while initalizing retrier: %v", err)
+				t.Fatalf("error while initializing retrier: %v", err)
 			}
 
 			// create context
@@ -167,7 +167,7 @@ func TestRetryAsync(t *testing.T) {
 		Immediate bool
 	}{
 		{
-			Name:      "should call the condition correct number of times and with exponentialy growing intervals",
+			Name:      "should call the condition correct number of times and with exponentially growing intervals",
 			trueAfter: 5,
 			Config: Configuration{
 				Base:        time.Millisecond * 10,
@@ -229,7 +229,7 @@ func TestRetryAsync(t *testing.T) {
 			// create new retrier
 			retrier, err := New(tt.Config, rn)
 			if err != nil {
-				t.Fatalf("error while initalizing retrier: %v", err)
+				t.Fatalf("error while initializing retrier: %v", err)
 			}
 
 			// create context
@@ -348,7 +348,7 @@ func TestNext(t *testing.T) {
 			// create new retrier
 			retrier, err := New(tt.Config, mockRn)
 			if err != nil {
-				t.Fatalf("error while initalizing retrier: %v", err)
+				t.Fatalf("error while initializing retrier: %v", err)
 			}
 
 			retrier.retryBeforeMax = tt.RetryBeforeMax
