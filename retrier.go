@@ -38,10 +38,10 @@ func (c Configuration) Validate() error {
 	return nil
 }
 
-// RandomFunc represents a function that returns a random number between the half open interval [0,n)
+// RandomFunc represents a function that returns a random number in the half open interval [0,n)
 type RandomFunc func(n int64) int64
 
-// Condition function returns a boolean value that decides if retrier should terminate.
+// Condition represents a function that returns a boolean value which decides if retrier should terminate or not.
 type Condition func() bool
 
 // Default configuration values
@@ -55,7 +55,7 @@ var newTicker = func(d time.Duration) *time.Ticker {
 	return time.NewTicker(d)
 }
 
-// DefaultRandomFunc uses math/rand seeded with nanosecond precision
+// DefaultRandomFunc uses math/rand with nanosecond precision to generate random numbers
 var DefaultRandomFunc = func(n int64) int64 {
 	rand.Seed(time.Now().UnixNano())
 	return rand.Int63n(n)
@@ -100,7 +100,7 @@ func DefaultConfiguration() Configuration {
 //
 // Notify channel will be closed right after the context gets canceled or the condition returns true.
 //
-// If immediate is true, condition will be run immediately.
+// If immediate is true, condition will be run immediately. If false, the condition will run after the first retry interval has passed
 func (r *Retrier) Retry(ctx context.Context, cond Condition, immediate bool) (notify <-chan struct{}) {
 	ch := make(chan struct{})
 
@@ -109,9 +109,11 @@ func (r *Retrier) Retry(ctx context.Context, cond Condition, immediate bool) (no
 	return ch
 }
 
-// RetryAsync executes the condition asynchronously with the timer until it is satisfied.
+// RetryAsync executes the condition parallel to the timer.
 //
 // Notify channel will be closed right after the context gets canceled or the condition returns true.
+//
+// If immediate is true, condition will be run immediately. If false, the condition will run after the first retry interval has passed
 func (r *Retrier) RetryAsync(ctx context.Context, cond Condition, immediate bool) (notify <-chan struct{}) {
 	ch := make(chan struct{})
 
