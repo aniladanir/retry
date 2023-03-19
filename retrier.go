@@ -21,6 +21,8 @@ type Configuration struct {
 	MinInterval time.Duration
 	// MaxInterval is the maximum allowed retry interval.
 	MaxInterval time.Duration
+	// Growth factor sets the base for the exponential function
+	GrowthFactor int
 }
 
 // Validate checks the configuration for invalid values
@@ -46,9 +48,10 @@ type Condition func() bool
 
 // Default configuration values
 const (
-	DefaultBase        = time.Millisecond * 1000
-	DefaultMinInterval = time.Millisecond * 0
-	DefaultMaxInterval = time.Millisecond * 32000
+	DefaultBase         = time.Millisecond * 1000
+	DefaultMinInterval  = time.Millisecond * 0
+	DefaultMaxInterval  = time.Millisecond * 32000
+	DefaultGrowthFactor = 2
 )
 
 var newTicker = func(d time.Duration) *time.Ticker {
@@ -74,7 +77,7 @@ func New(config Configuration, rn RandomFunc) (*Retrier, error) {
 
 	retryBeforeMax := 0
 	for {
-		if intPow(2, retryBeforeMax)*int(config.Base) > int(config.MaxInterval)/2 {
+		if intPow(config.GrowthFactor, retryBeforeMax)*int(config.Base) > int(config.MaxInterval)/2 {
 			break
 		}
 		retryBeforeMax++
@@ -90,9 +93,10 @@ func New(config Configuration, rn RandomFunc) (*Retrier, error) {
 // DefaultConfiguration returns the default configuration for retrier
 func DefaultConfiguration() Configuration {
 	return Configuration{
-		Base:        DefaultBase,
-		MinInterval: DefaultMinInterval,
-		MaxInterval: DefaultMaxInterval,
+		Base:         DefaultBase,
+		MinInterval:  DefaultMinInterval,
+		MaxInterval:  DefaultMaxInterval,
+		GrowthFactor: DefaultGrowthFactor,
 	}
 }
 
@@ -201,7 +205,7 @@ func (r *Retrier) next(attempt int) time.Duration {
 	if r.retryBeforeMax < attempt {
 		backoff = r.config.MaxInterval
 	} else {
-		backoff = time.Duration(intPow(2, attempt)) * r.config.Base
+		backoff = time.Duration(intPow(r.config.GrowthFactor, attempt)) * r.config.Base
 	}
 
 	return jitter(r.rn, r.config.MinInterval, backoff)

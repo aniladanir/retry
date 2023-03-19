@@ -24,9 +24,10 @@ func TestRetry(t *testing.T) {
 			Name:      "should call the condition correct number of times and with exponentially growing intervals",
 			trueAfter: 5,
 			Config: Configuration{
-				Base:        time.Millisecond * 10,
-				MaxInterval: time.Millisecond * 100,
-				MinInterval: time.Millisecond * 0,
+				Base:         time.Millisecond * 10,
+				MaxInterval:  time.Millisecond * 100,
+				MinInterval:  time.Millisecond * 0,
+				GrowthFactor: 2,
 			},
 			Timeout:   -1,
 			Immediate: false,
@@ -35,9 +36,10 @@ func TestRetry(t *testing.T) {
 			Name:      "should notify after context is canceled",
 			trueAfter: 5,
 			Config: Configuration{
-				Base:        time.Millisecond * 11,
-				MaxInterval: time.Millisecond * 100,
-				MinInterval: time.Millisecond * 10,
+				Base:         time.Millisecond * 11,
+				MaxInterval:  time.Millisecond * 100,
+				MinInterval:  time.Millisecond * 10,
+				GrowthFactor: 2,
 			},
 			Timeout:   time.Nanosecond * 1,
 			Immediate: false,
@@ -46,9 +48,10 @@ func TestRetry(t *testing.T) {
 			Name:      "should call condition immediately",
 			trueAfter: 1,
 			Config: Configuration{
-				Base:        time.Millisecond * 10,
-				MaxInterval: time.Millisecond * 100,
-				MinInterval: time.Millisecond * 0,
+				Base:         time.Millisecond * 10,
+				MaxInterval:  time.Millisecond * 100,
+				MinInterval:  time.Millisecond * 0,
+				GrowthFactor: 2,
 			},
 			Timeout:   -1,
 			Immediate: true,
@@ -170,9 +173,10 @@ func TestRetryAsync(t *testing.T) {
 			Name:      "should call the condition correct number of times and with exponentially growing intervals",
 			trueAfter: 5,
 			Config: Configuration{
-				Base:        time.Millisecond * 10,
-				MaxInterval: time.Millisecond * 100,
-				MinInterval: time.Millisecond * 0,
+				Base:         time.Millisecond * 10,
+				MaxInterval:  time.Millisecond * 100,
+				MinInterval:  time.Millisecond * 0,
+				GrowthFactor: 2,
 			},
 			Timeout:   -1,
 			Immediate: false,
@@ -181,9 +185,10 @@ func TestRetryAsync(t *testing.T) {
 			Name:      "should notify after context is canceled",
 			trueAfter: 5,
 			Config: Configuration{
-				Base:        time.Millisecond * 11,
-				MaxInterval: time.Millisecond * 100,
-				MinInterval: time.Millisecond * 10,
+				Base:         time.Millisecond * 11,
+				MaxInterval:  time.Millisecond * 100,
+				MinInterval:  time.Millisecond * 10,
+				GrowthFactor: 2,
 			},
 			Timeout:   time.Nanosecond * 1,
 			Immediate: false,
@@ -192,9 +197,10 @@ func TestRetryAsync(t *testing.T) {
 			Name:      "should call condition immediately",
 			trueAfter: 1,
 			Config: Configuration{
-				Base:        time.Millisecond * 10,
-				MaxInterval: time.Millisecond * 100,
-				MinInterval: time.Millisecond * 0,
+				Base:         time.Millisecond * 10,
+				MaxInterval:  time.Millisecond * 100,
+				MinInterval:  time.Millisecond * 0,
+				GrowthFactor: 2,
 			},
 			Timeout:   -1,
 			Immediate: true,
@@ -317,9 +323,10 @@ func TestNext(t *testing.T) {
 		{
 			Name: "should return base_duration * 2 ^ attempt ",
 			Config: Configuration{
-				Base:        2,
-				MinInterval: 0,
-				MaxInterval: 10,
+				Base:         2,
+				MinInterval:  0,
+				MaxInterval:  10,
+				GrowthFactor: 2,
 			},
 			RetryBeforeMax: 10,
 			Attempt:        3,
@@ -328,9 +335,10 @@ func TestNext(t *testing.T) {
 		{
 			Name: "should return max interval if attempt is greater than retryBeforeMax",
 			Config: Configuration{
-				Base:        2,
-				MinInterval: 0,
-				MaxInterval: 10,
+				Base:         2,
+				MinInterval:  0,
+				MaxInterval:  10,
+				GrowthFactor: 2,
 			},
 			RetryBeforeMax: 2,
 			Attempt:        3,
@@ -450,9 +458,10 @@ func TestValidateConfiguration(t *testing.T) {
 		{
 			name: "should return no errors if configuration is valid",
 			give: Configuration{
-				Base:        1,
-				MinInterval: 1,
-				MaxInterval: 2,
+				Base:         1,
+				MinInterval:  1,
+				MaxInterval:  2,
+				GrowthFactor: 2,
 			},
 			want: nil,
 		},
@@ -517,9 +526,10 @@ func TestValidateConfiguration(t *testing.T) {
 
 func TestDefaultConfig(t *testing.T) {
 	expected := Configuration{
-		Base:        DefaultBase,
-		MinInterval: DefaultMinInterval,
-		MaxInterval: DefaultMaxInterval,
+		Base:         DefaultBase,
+		MinInterval:  DefaultMinInterval,
+		MaxInterval:  DefaultMaxInterval,
+		GrowthFactor: DefaultGrowthFactor,
 	}
 	got := DefaultConfiguration()
 
