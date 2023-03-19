@@ -36,6 +36,9 @@ func (c Configuration) Validate() error {
 	if c.MinInterval >= c.MaxInterval {
 		return errors.New("maximum interval must be greater than minimum interval")
 	}
+	if c.GrowthFactor < 2 {
+		return errors.New("growth factor must be greater than one")
+	}
 
 	return nil
 }

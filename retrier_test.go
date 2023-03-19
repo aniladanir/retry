@@ -513,6 +513,16 @@ func TestValidateConfiguration(t *testing.T) {
 			},
 			want: errors.New("maximum interval must be greater than minimum interval"),
 		},
+		{
+			name: "should return error if growth factor is less than two",
+			give: Configuration{
+				Base:         1,
+				MinInterval:  0,
+				MaxInterval:  2,
+				GrowthFactor: 1,
+			},
+			want: errors.New("growth factor must be greater than one"),
+		},
 	}
 
 	for _, tt := range tests {
