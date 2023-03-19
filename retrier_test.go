@@ -466,52 +466,52 @@ func TestValidateConfiguration(t *testing.T) {
 			want: nil,
 		},
 		{
-			name: "should return error if base value is zero",
+			name: "should return error if base duration is zero",
 			give: Configuration{
 				Base: 0,
 			},
 			want: errors.New("base duration must be greater than zero"),
 		},
 		{
-			name: "should return error if base value is negative",
+			name: "should return error if base duration is negative",
 			give: Configuration{
 				Base: -1,
 			},
 			want: errors.New("base duration must be greater than zero"),
 		},
 		{
-			name: "should return error if base duration is greater than maximum duration",
+			name: "should return error if base duration is greater than maximum interval",
 			give: Configuration{
 				Base:        1,
 				MaxInterval: 0,
 			},
-			want: errors.New("maximum duration must be greater than base duration"),
+			want: errors.New("maximum interval must be greater than base duration"),
 		},
 		{
-			name: "should return error if base duration is equal to maximum duration",
+			name: "should return error if base duration is equal to maximum interval",
 			give: Configuration{
 				Base:        1,
 				MaxInterval: 0,
 			},
-			want: errors.New("maximum duration must be greater than base duration"),
+			want: errors.New("maximum interval must be greater than base duration"),
 		},
 		{
-			name: "should return error if minimum duration is greater than maximum duration",
+			name: "should return error if minimum interval is greater than maximum interval",
 			give: Configuration{
 				Base:        1,
 				MinInterval: 3,
 				MaxInterval: 2,
 			},
-			want: errors.New("maximum duration must be greater than minimum duration"),
+			want: errors.New("maximum interval must be greater than minimum interval"),
 		},
 		{
-			name: "should return error if minimum duration is equal to maximum duration",
+			name: "should return error if minimum interval is equal to maximum interval",
 			give: Configuration{
 				Base:        1,
 				MinInterval: 2,
 				MaxInterval: 2,
 			},
-			want: errors.New("maximum duration must be greater than minimum duration"),
+			want: errors.New("maximum interval must be greater than minimum interval"),
 		},
 	}
 

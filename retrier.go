@@ -31,10 +31,10 @@ func (c Configuration) Validate() error {
 		return errors.New("base duration must be greater than zero")
 	}
 	if c.Base >= c.MaxInterval {
-		return errors.New("maximum duration must be greater than base duration")
+		return errors.New("maximum interval must be greater than base duration")
 	}
 	if c.MinInterval >= c.MaxInterval {
-		return errors.New("maximum duration must be greater than minimum duration")
+		return errors.New("maximum interval must be greater than minimum interval")
 	}
 
 	return nil
