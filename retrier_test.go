@@ -140,7 +140,7 @@ func TestRetry(t *testing.T) {
 
 			t.Run("should stop ticker", func(t *testing.T) {
 				select {
-				case _ = <-ticker.C:
+				case <-ticker.C:
 				default:
 				}
 				// wait for more than maximum interval and check again if there is a tick
@@ -288,7 +288,7 @@ func TestRetryAsync(t *testing.T) {
 
 			t.Run("should stop ticker", func(t *testing.T) {
 				select {
-				case _ = <-ticker.C:
+				case <-ticker.C:
 				default:
 				}
 				// wait for more than maximum interval and check again if there is a tick
