@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"os"
-	"reflect"
 	"testing"
 	"time"
 )
@@ -12,22 +11,27 @@ import (
 // timeout value for tests calling retry
 const notifyTimeout = time.Second * 5
 
+var mockRn = func(n int64) int64 {
+	return n
+}
+
 func TestRetry(t *testing.T) {
 	tests := []struct {
 		Name      string
 		trueAfter int
-		Config    Configuration
+		R         Retrier
 		Timeout   time.Duration
 		Immediate bool
 	}{
 		{
 			Name:      "should call the condition correct number of times and with exponentially growing intervals",
 			trueAfter: 5,
-			Config: Configuration{
-				Base:         time.Millisecond * 10,
-				MaxInterval:  time.Millisecond * 100,
-				MinInterval:  time.Millisecond * 0,
-				GrowthFactor: 2,
+			R: Retrier{
+				timeFactor:    time.Millisecond * 10,
+				maxInterval:   time.Millisecond * 100,
+				minInterval:   time.Millisecond * 0,
+				growthFactor:  2,
+				maxRetryCount: 3,
 			},
 			Timeout:   -1,
 			Immediate: false,
@@ -35,11 +39,12 @@ func TestRetry(t *testing.T) {
 		{
 			Name:      "should notify after context is canceled",
 			trueAfter: 5,
-			Config: Configuration{
-				Base:         time.Millisecond * 11,
-				MaxInterval:  time.Millisecond * 100,
-				MinInterval:  time.Millisecond * 10,
-				GrowthFactor: 2,
+			R: Retrier{
+				timeFactor:    time.Millisecond * 11,
+				maxInterval:   time.Millisecond * 100,
+				minInterval:   time.Millisecond * 10,
+				growthFactor:  2,
+				maxRetryCount: 3,
 			},
 			Timeout:   time.Nanosecond * 1,
 			Immediate: false,
@@ -47,11 +52,12 @@ func TestRetry(t *testing.T) {
 		{
 			Name:      "should call condition immediately",
 			trueAfter: 1,
-			Config: Configuration{
-				Base:         time.Millisecond * 10,
-				MaxInterval:  time.Millisecond * 100,
-				MinInterval:  time.Millisecond * 0,
-				GrowthFactor: 2,
+			R: Retrier{
+				timeFactor:    time.Millisecond * 10,
+				maxInterval:   time.Millisecond * 100,
+				minInterval:   time.Millisecond * 0,
+				growthFactor:  2,
+				maxRetryCount: 3,
 			},
 			Timeout:   -1,
 			Immediate: true,
@@ -64,15 +70,16 @@ func TestRetry(t *testing.T) {
 				calls     = 0
 				intervals = make([]int64, 0)
 				ticker    = time.NewTicker(time.Nanosecond)
-				rn        = func(n int64) int64 {
-					intervals = append(intervals, n)
-					return n
-				}
-				cond = func() bool {
+				cond      = func() bool {
 					calls++
 					return calls == tt.trueAfter
 				}
 			)
+
+			tt.R.rf = func(n int64) int64 {
+				intervals = append(intervals, n)
+				return n
+			}
 
 			// inject ticker
 			original := newTicker
@@ -81,12 +88,6 @@ func TestRetry(t *testing.T) {
 			}()
 			newTicker = func(d time.Duration) *time.Ticker {
 				return ticker
-			}
-
-			// create new retrier
-			retrier, err := New(tt.Config, rn)
-			if err != nil {
-				t.Fatalf("error while initializing retrier: %v", err)
 			}
 
 			// create context
@@ -100,7 +101,7 @@ func TestRetry(t *testing.T) {
 			}
 
 			// start retrying
-			notify := retrier.Retry(ctx, cond, tt.Immediate)
+			notify := tt.R.Retry(ctx, cond, tt.Immediate)
 
 			// wait for notification
 			select {
@@ -121,16 +122,16 @@ func TestRetry(t *testing.T) {
 			// test intervals
 			for i, got := range intervals {
 				// calculate expected interval
-				expected := tt.Config.Base
+				expected := tt.R.timeFactor
 				for j := 0; j < i; j++ {
 					expected *= 2
 				}
-				if expected > tt.Config.MaxInterval {
-					expected = tt.Config.MaxInterval
+				if expected > tt.R.maxInterval {
+					expected = tt.R.maxInterval
 				}
 
-				if got != int64(expected) {
-					t.Errorf("expected interval: %d got: %d", expected, got)
+				if gotDur := time.Duration(got); gotDur != expected {
+					t.Errorf("expected interval: %s got: %s", expected, gotDur)
 				}
 			}
 
@@ -147,7 +148,7 @@ func TestRetry(t *testing.T) {
 				default:
 				}
 				// wait for more than maximum interval and check again if there is a tick
-				maxTimer := time.NewTimer(retrier.config.MaxInterval * 2)
+				maxTimer := time.NewTimer(tt.R.maxInterval * 2)
 				defer maxTimer.Stop()
 				<-maxTimer.C
 
@@ -165,18 +166,19 @@ func TestRetryAsync(t *testing.T) {
 	tests := []struct {
 		Name      string
 		trueAfter int
-		Config    Configuration
+		R         Retrier
 		Timeout   time.Duration
 		Immediate bool
 	}{
 		{
 			Name:      "should call the condition correct number of times and with exponentially growing intervals",
 			trueAfter: 5,
-			Config: Configuration{
-				Base:         time.Millisecond * 10,
-				MaxInterval:  time.Millisecond * 100,
-				MinInterval:  time.Millisecond * 0,
-				GrowthFactor: 2,
+			R: Retrier{
+				timeFactor:    time.Millisecond * 10,
+				maxInterval:   time.Millisecond * 100,
+				minInterval:   time.Millisecond * 0,
+				growthFactor:  2,
+				maxRetryCount: 3,
 			},
 			Timeout:   -1,
 			Immediate: false,
@@ -184,11 +186,12 @@ func TestRetryAsync(t *testing.T) {
 		{
 			Name:      "should notify after context is canceled",
 			trueAfter: 5,
-			Config: Configuration{
-				Base:         time.Millisecond * 11,
-				MaxInterval:  time.Millisecond * 100,
-				MinInterval:  time.Millisecond * 10,
-				GrowthFactor: 2,
+			R: Retrier{
+				timeFactor:    time.Millisecond * 11,
+				maxInterval:   time.Millisecond * 100,
+				minInterval:   time.Millisecond * 10,
+				growthFactor:  2,
+				maxRetryCount: 3,
 			},
 			Timeout:   time.Nanosecond * 1,
 			Immediate: false,
@@ -196,11 +199,12 @@ func TestRetryAsync(t *testing.T) {
 		{
 			Name:      "should call condition immediately",
 			trueAfter: 1,
-			Config: Configuration{
-				Base:         time.Millisecond * 10,
-				MaxInterval:  time.Millisecond * 100,
-				MinInterval:  time.Millisecond * 0,
-				GrowthFactor: 2,
+			R: Retrier{
+				timeFactor:    time.Millisecond * 10,
+				maxInterval:   time.Millisecond * 100,
+				minInterval:   time.Millisecond * 0,
+				growthFactor:  2,
+				maxRetryCount: 3,
 			},
 			Timeout:   -1,
 			Immediate: true,
@@ -213,15 +217,16 @@ func TestRetryAsync(t *testing.T) {
 				calls     = 0
 				intervals = make([]int64, 0)
 				ticker    = time.NewTicker(time.Nanosecond)
-				rn        = func(n int64) int64 {
-					intervals = append(intervals, n)
-					return n
-				}
-				cond = func() bool {
+				cond      = func() bool {
 					calls++
 					return calls == tt.trueAfter
 				}
 			)
+
+			tt.R.rf = func(n int64) int64 {
+				intervals = append(intervals, n)
+				return n
+			}
 
 			// inject ticker
 			original := newTicker
@@ -230,12 +235,6 @@ func TestRetryAsync(t *testing.T) {
 			}()
 			newTicker = func(d time.Duration) *time.Ticker {
 				return ticker
-			}
-
-			// create new retrier
-			retrier, err := New(tt.Config, rn)
-			if err != nil {
-				t.Fatalf("error while initializing retrier: %v", err)
 			}
 
 			// create context
@@ -249,7 +248,7 @@ func TestRetryAsync(t *testing.T) {
 			}
 
 			// start retrying
-			notify := retrier.RetryAsync(ctx, cond, tt.Immediate)
+			notify := tt.R.RetryAsync(ctx, cond, tt.Immediate)
 
 			// wait for notification
 			select {
@@ -270,16 +269,16 @@ func TestRetryAsync(t *testing.T) {
 			// test intervals
 			for i, got := range intervals {
 				// calculate expected interval
-				expected := tt.Config.Base
+				expected := tt.R.timeFactor
 				for j := 0; j < i; j++ {
 					expected *= 2
 				}
-				if expected > tt.Config.MaxInterval {
-					expected = tt.Config.MaxInterval
+				if expected > tt.R.maxInterval {
+					expected = tt.R.maxInterval
 				}
 
-				if got != int64(expected) {
-					t.Errorf("expected interval: %d got: %d", expected, got)
+				if gotDur := time.Duration(got); gotDur != expected {
+					t.Errorf("expected interval: %s got: %s", expected, gotDur)
 				}
 			}
 
@@ -287,8 +286,8 @@ func TestRetryAsync(t *testing.T) {
 			if tt.Immediate {
 				if len(intervals) != 1 {
 					t.Errorf("expected number of calls to randomfunc: 1, got: %d", len(intervals))
-				} else if intervals[0] != int64(tt.Config.Base) {
-					t.Errorf("expected first interval: %s, got: %s", tt.Config.Base, time.Duration(intervals[0]))
+				} else if intervals[0] != int64(tt.R.timeFactor) {
+					t.Errorf("expected first interval: %s, got: %s", tt.R.timeFactor, time.Duration(intervals[0]))
 				}
 			}
 
@@ -298,7 +297,7 @@ func TestRetryAsync(t *testing.T) {
 				default:
 				}
 				// wait for more than maximum interval and check again if there is a tick
-				maxTimer := time.NewTimer(retrier.config.MaxInterval * 2)
+				maxTimer := time.NewTimer(tt.R.maxInterval * 2)
 				defer maxTimer.Stop()
 				<-maxTimer.C
 
@@ -315,211 +314,120 @@ func TestRetryAsync(t *testing.T) {
 func TestNext(t *testing.T) {
 	tests := []struct {
 		Name           string
-		Config         Configuration
+		r              Retrier
 		RetryBeforeMax int
 		Attempt        int
 		Want           time.Duration
 	}{
 		{
 			Name: "should return base_duration * 2 ^ attempt ",
-			Config: Configuration{
-				Base:         2,
-				MinInterval:  0,
-				MaxInterval:  10,
-				GrowthFactor: 2,
+			r: Retrier{
+				timeFactor:    2,
+				minInterval:   0,
+				maxInterval:   10,
+				growthFactor:  2,
+				maxRetryCount: 10,
+				rf:            mockRn,
 			},
-			RetryBeforeMax: 10,
-			Attempt:        3,
-			Want:           16,
+			Attempt: 3,
+			Want:    16,
 		},
 		{
-			Name: "should return max interval if attempt is greater than retryBeforeMax",
-			Config: Configuration{
-				Base:         2,
-				MinInterval:  0,
-				MaxInterval:  10,
-				GrowthFactor: 2,
+			Name: "should return max interval if attempt is greater than maximum retry coutn",
+			r: Retrier{
+				timeFactor:    2,
+				minInterval:   0,
+				maxInterval:   10,
+				growthFactor:  2,
+				maxRetryCount: 2,
+				rf:            mockRn,
 			},
-			RetryBeforeMax: 2,
-			Attempt:        3,
-			Want:           10,
+			Attempt: 3,
+			Want:    10,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.Name, func(t *testing.T) {
-			// set random function
-			mockRn := func(n int64) int64 {
-				return n
-			}
-
-			// create new retrier
-			retrier, err := New(tt.Config, mockRn)
-			if err != nil {
-				t.Fatalf("error while initializing retrier: %v", err)
-			}
-
-			retrier.retryBeforeMax = tt.RetryBeforeMax
-
-			if got := retrier.next(tt.Attempt); got != tt.Want {
+			if got := tt.r.next(tt.Attempt); got != tt.Want {
 				t.Errorf("expected: %s, got: %s", tt.Want, got)
 			}
 		})
 	}
 }
 
-func TestNew(t *testing.T) {
-	mockRn := func(n int64) int64 {
-		return n
-	}
-
-	tests := []struct {
-		Name    string
-		Config  Configuration
-		Rn      RandomFunc
-		Want    Retrier
-		WantErr error
-	}{
-		{
-			Name:   "should set fields correctly",
-			Config: DefaultConfiguration(),
-			Rn:     mockRn,
-			Want: Retrier{
-				rn:             mockRn,
-				config:         DefaultConfiguration(),
-				retryBeforeMax: 5,
-			},
-			WantErr: nil,
-		},
-		{
-			Name:   "should default to DefaultRandomFunc if not provided",
-			Config: DefaultConfiguration(),
-			Rn:     nil,
-			Want: Retrier{
-				rn:             DefaultRandomFunc,
-				config:         DefaultConfiguration(),
-				retryBeforeMax: 5,
-			},
-			WantErr: nil,
-		},
-		{
-			Name: "should return error",
-			Rn:   mockRn,
-			Config: Configuration{
-				Base:        -1,
-				MinInterval: -1,
-				MaxInterval: -1,
-			},
-			Want: Retrier{
-				rn: mockRn,
-				config: Configuration{
-					Base:        -1,
-					MinInterval: -1,
-					MaxInterval: -1,
-				},
-				retryBeforeMax: 5,
-			},
-			WantErr: errors.New("base duration must be greater than zero"),
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.Name, func(t *testing.T) {
-			got, gotErr := New(tt.Config, tt.Rn)
-			if gotErr != tt.WantErr && gotErr.Error() != tt.WantErr.Error() {
-				t.Errorf("expected error: %v got error: %v", tt.WantErr, gotErr)
-			}
-
-			if got != nil {
-				// isolate random functions
-				gotRn := got.rn
-				got.rn = nil
-				wantRn := tt.Want.rn
-				tt.Want.rn = nil
-
-				if !reflect.DeepEqual(*got, tt.Want) {
-					t.Errorf("expected: %+v got: %+v", tt.Want, got)
-				}
-
-				if reflect.ValueOf(gotRn).Pointer() != reflect.ValueOf(wantRn).Pointer() {
-					t.Errorf("expected random function does not match got random function")
-				}
-			}
-		})
-	}
-}
-
-func TestValidateConfiguration(t *testing.T) {
+func TestValidate(t *testing.T) {
 	tests := []struct {
 		name string
-		give Configuration
+		give *Retrier
 		want error
 	}{
 		{
 			name: "should return no errors if configuration is valid",
-			give: Configuration{
-				Base:         1,
-				MinInterval:  1,
-				MaxInterval:  2,
-				GrowthFactor: 2,
+			give: &Retrier{
+				timeFactor:   1,
+				minInterval:  1,
+				maxInterval:  2,
+				growthFactor: 2,
+				rf:           mockRn,
 			},
 			want: nil,
 		},
 		{
 			name: "should return error if base duration is zero",
-			give: Configuration{
-				Base: 0,
+			give: &Retrier{
+				timeFactor: 0,
 			},
 			want: errors.New("base duration must be greater than zero"),
 		},
 		{
 			name: "should return error if base duration is negative",
-			give: Configuration{
-				Base: -1,
+			give: &Retrier{
+				timeFactor: -1,
 			},
 			want: errors.New("base duration must be greater than zero"),
 		},
 		{
 			name: "should return error if base duration is greater than maximum interval",
-			give: Configuration{
-				Base:        1,
-				MaxInterval: 0,
+			give: &Retrier{
+				timeFactor:  1,
+				maxInterval: 0,
 			},
 			want: errors.New("maximum interval must be greater than base duration"),
 		},
 		{
 			name: "should return error if base duration is equal to maximum interval",
-			give: Configuration{
-				Base:        1,
-				MaxInterval: 0,
+			give: &Retrier{
+				timeFactor:  1,
+				maxInterval: 0,
 			},
 			want: errors.New("maximum interval must be greater than base duration"),
 		},
 		{
 			name: "should return error if minimum interval is greater than maximum interval",
-			give: Configuration{
-				Base:        1,
-				MinInterval: 3,
-				MaxInterval: 2,
+			give: &Retrier{
+				timeFactor:  1,
+				minInterval: 3,
+				maxInterval: 2,
 			},
 			want: errors.New("maximum interval must be greater than minimum interval"),
 		},
 		{
 			name: "should return error if minimum interval is equal to maximum interval",
-			give: Configuration{
-				Base:        1,
-				MinInterval: 2,
-				MaxInterval: 2,
+			give: &Retrier{
+				timeFactor:  1,
+				minInterval: 2,
+				maxInterval: 2,
 			},
 			want: errors.New("maximum interval must be greater than minimum interval"),
 		},
 		{
 			name: "should return error if growth factor is less than two",
-			give: Configuration{
-				Base:         1,
-				MinInterval:  0,
-				MaxInterval:  2,
-				GrowthFactor: 1,
+			give: &Retrier{
+				timeFactor:   1,
+				minInterval:  0,
+				maxInterval:  2,
+				growthFactor: 1,
 			},
 			want: errors.New("growth factor must be greater than one"),
 		},
@@ -531,20 +439,6 @@ func TestValidateConfiguration(t *testing.T) {
 				t.Errorf("expected: %+v got: %+v", tt.want, got)
 			}
 		})
-	}
-}
-
-func TestDefaultConfig(t *testing.T) {
-	expected := Configuration{
-		Base:         DefaultBase,
-		MinInterval:  DefaultMinInterval,
-		MaxInterval:  DefaultMaxInterval,
-		GrowthFactor: DefaultGrowthFactor,
-	}
-	got := DefaultConfiguration()
-
-	if !reflect.DeepEqual(expected, got) {
-		t.Errorf("expected: %+v, got: %+v", expected, got)
 	}
 }
 
@@ -571,31 +465,10 @@ func TestJitter(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.Name, func(t *testing.T) {
-			// set random func
-			mockRn := func(n int64) int64 {
-				return n
-			}
-
 			if got := jitter(mockRn, tt.Min, tt.Max); got != tt.Want {
 				t.Errorf("expected: %s, got: %s", tt.Want, got)
 			}
 		})
-	}
-}
-
-func TestStopAndDrainTicker(t *testing.T) {
-	ticker := time.NewTicker(time.Nanosecond)
-	defer ticker.Stop()
-
-	// wait for tick
-	time.Sleep(time.Nanosecond * 2)
-
-	stopAndDrainTicker(ticker)
-
-	select {
-	case <-ticker.C:
-		t.Error("ticker is not stopped or there was a unread tick left in the channel")
-	case <-time.After(time.Nanosecond * 2):
 	}
 }
 
@@ -626,37 +499,5 @@ func TestIntPow(t *testing.T) {
 				t.Errorf("expected: %d, got: %d", tt.Want, got)
 			}
 		})
-	}
-}
-
-func TestDefaultRandomFunc(t *testing.T) {
-	for i := 1; i < 10000; i++ {
-		if got := DefaultRandomFunc(int64(i)); got >= int64(i) {
-			t.Errorf("expected to be less than: %d, got: %d", i, got)
-		}
-	}
-}
-
-func TestNewTicker(t *testing.T) {
-	expectedPeriod := time.Millisecond * 10
-
-	ticker := newTicker(expectedPeriod)
-	if ticker == nil {
-		t.Fatal("returned ticker is nil")
-	}
-
-	select {
-	case <-ticker.C:
-	case <-time.After(expectedPeriod):
-		t.Error("ticker period is set incorrectly or ticker is stopped")
-	}
-
-	period := reflect.ValueOf(ticker).Elem().Field(1).Field(2)
-	if !period.CanInt() {
-		t.Fatal("cannot access period field")
-	}
-
-	if got := period.Int(); got != int64(expectedPeriod) {
-		t.Errorf("expected: %s, got: %s", expectedPeriod, time.Duration(got))
 	}
 }

@@ -8,36 +8,36 @@ import (
 )
 
 type Retrier struct {
-	rn             RandomFunc
-	config         Configuration
-	retryBeforeMax int
-}
-
-// Configuration defines the settings for retrier
-type Configuration struct {
-	// Base is the base duration.
-	Base time.Duration
-	// MinInterval is the minimum allowed retry interval.
-	MinInterval time.Duration
-	// MaxInterval is the maximum allowed retry interval.
-	MaxInterval time.Duration
+	// timeFactor is the base duration.
+	timeFactor time.Duration
+	// minInterval is the minimum allowed retry interval.
+	minInterval time.Duration
+	// maxInterval is the maximum allowed retry interval.
+	maxInterval time.Duration
 	// Growth factor sets the base for the exponential function
-	GrowthFactor int
+	growthFactor int
+	// RandomFunc represents a function that returns a random number in the half open interval [0,n)
+	rf RandomFunc
+	// pre-calculated value based on the given configuration that indicates max number of retries before reaching maximum interval.
+	maxRetryCount int
 }
 
 // Validate checks the configuration for invalid values
-func (c Configuration) Validate() error {
-	if c.Base <= 0 {
+func (r *Retrier) Validate() error {
+	if r.timeFactor <= 0 {
 		return errors.New("base duration must be greater than zero")
 	}
-	if c.Base >= c.MaxInterval {
+	if r.timeFactor >= r.maxInterval {
 		return errors.New("maximum interval must be greater than base duration")
 	}
-	if c.MinInterval >= c.MaxInterval {
+	if r.minInterval >= r.maxInterval {
 		return errors.New("maximum interval must be greater than minimum interval")
 	}
-	if c.GrowthFactor < 2 {
+	if r.growthFactor < 2 {
 		return errors.New("growth factor must be greater than one")
+	}
+	if r.rf == nil {
+		return errors.New("random function cannot be nil")
 	}
 
 	return nil
@@ -51,7 +51,7 @@ type Condition func() bool
 
 // Default configuration values
 const (
-	DefaultBase         = time.Millisecond * 1000
+	DefaultTimeFactor   = time.Millisecond * 1000
 	DefaultMinInterval  = time.Millisecond * 0
 	DefaultMaxInterval  = time.Millisecond * 32000
 	DefaultGrowthFactor = 2
@@ -61,46 +61,39 @@ var newTicker = func(d time.Duration) *time.Ticker {
 	return time.NewTicker(d)
 }
 
-// DefaultRandomFunc uses math/rand with nanosecond precision to generate random numbers
-var DefaultRandomFunc = func(n int64) int64 {
-	rand.Seed(time.Now().UnixNano())
-	return rand.Int63n(n)
+// DefaultRandomFunc returns a random function that uses math/rand with nanosecond precision to generate random numbers.
+func DefaultRandomFunc() RandomFunc {
+	return func(n int64) int64 {
+		rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+		return rng.Int63n(n)
+	}
 }
 
 // New creates a new retrier with the default configuration.
-// If rn is not provided, it will use the default RandomNumberFunc.
-func New(config Configuration, rn RandomFunc) (*Retrier, error) {
-	if err := config.Validate(); err != nil {
+func New(options ...Option) (*Retrier, error) {
+	r := &Retrier{
+		timeFactor:   DefaultTimeFactor,
+		minInterval:  DefaultMinInterval,
+		maxInterval:  DefaultMaxInterval,
+		growthFactor: DefaultGrowthFactor,
+		rf:           DefaultRandomFunc(),
+	}
+	for _, o := range options {
+		o(r)
+	}
+
+	if err := r.Validate(); err != nil {
 		return nil, err
 	}
 
-	if rn == nil {
-		rn = DefaultRandomFunc
-	}
-
-	retryBeforeMax := 0
 	for {
-		if intPow(config.GrowthFactor, retryBeforeMax)*int(config.Base) > int(config.MaxInterval)/2 {
+		if intPow(r.growthFactor, r.maxRetryCount)*int(r.timeFactor) > int(r.maxInterval)/2 {
 			break
 		}
-		retryBeforeMax++
+		r.maxRetryCount++
 	}
 
-	return &Retrier{
-		rn:             rn,
-		config:         config,
-		retryBeforeMax: retryBeforeMax,
-	}, nil
-}
-
-// DefaultConfiguration returns the default configuration for retrier
-func DefaultConfiguration() Configuration {
-	return Configuration{
-		Base:         DefaultBase,
-		MinInterval:  DefaultMinInterval,
-		MaxInterval:  DefaultMaxInterval,
-		GrowthFactor: DefaultGrowthFactor,
-	}
+	return r, nil
 }
 
 // Retry executes the condition until it is satisfied.
@@ -205,13 +198,13 @@ func (r *Retrier) retryAsync(ctx context.Context, cond Condition, ch chan<- stru
 func (r *Retrier) next(attempt int) time.Duration {
 	var backoff time.Duration
 
-	if r.retryBeforeMax < attempt {
-		backoff = r.config.MaxInterval
+	if r.maxRetryCount < attempt {
+		backoff = r.maxInterval
 	} else {
-		backoff = time.Duration(intPow(r.config.GrowthFactor, attempt)) * r.config.Base
+		backoff = time.Duration(intPow(r.growthFactor, attempt)) * r.timeFactor
 	}
 
-	return jitter(r.rn, r.config.MinInterval, backoff)
+	return jitter(r.rf, r.minInterval, backoff)
 }
 
 func jitter(rn RandomFunc, min time.Duration, max time.Duration) time.Duration {
