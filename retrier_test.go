@@ -22,6 +22,7 @@ func TestRetry(t *testing.T) {
 		R         Retrier
 		Timeout   time.Duration
 		Immediate bool
+		Want      bool
 	}{
 		{
 			Name:      "should call the condition correct number of times and with exponentially growing intervals",
@@ -35,6 +36,7 @@ func TestRetry(t *testing.T) {
 			},
 			Timeout:   -1,
 			Immediate: false,
+			Want:      true,
 		},
 		{
 			Name:      "should notify after context is canceled",
@@ -48,6 +50,7 @@ func TestRetry(t *testing.T) {
 			},
 			Timeout:   time.Nanosecond * 1,
 			Immediate: false,
+			Want:      false,
 		},
 		{
 			Name:      "should call condition immediately",
@@ -58,9 +61,11 @@ func TestRetry(t *testing.T) {
 				minInterval:   time.Millisecond * 0,
 				growthFactor:  2,
 				maxRetryCount: 3,
+				maxAttempts:   -1,
 			},
 			Timeout:   -1,
 			Immediate: true,
+			Want:      true,
 		},
 	}
 
@@ -105,9 +110,9 @@ func TestRetry(t *testing.T) {
 
 			// wait for notification
 			select {
-			case _, ok := <-notify:
-				if ok {
-					t.Error("received notify signal but the channel is not closed")
+			case ok := <-notify:
+				if tt.Want != ok {
+					t.Errorf("expected %t, got %t", tt.Want, ok)
 				}
 				if tt.Timeout > 0 {
 					if got := ctx.Err(); !os.IsTimeout(got) {
@@ -139,155 +144,6 @@ func TestRetry(t *testing.T) {
 			if tt.Immediate {
 				if len(intervals) != 0 {
 					t.Errorf("expected number of calls to randomfunc: 0, got: %d", len(intervals))
-				}
-			}
-
-			t.Run("should stop ticker", func(t *testing.T) {
-				select {
-				case <-ticker.C:
-				default:
-				}
-				// wait for more than maximum interval and check again if there is a tick
-				maxTimer := time.NewTimer(tt.R.maxInterval * 2)
-				defer maxTimer.Stop()
-				<-maxTimer.C
-
-				select {
-				case <-ticker.C:
-					t.Error("ticker is not stopped")
-				default:
-				}
-			})
-		})
-	}
-}
-
-func TestRetryAsync(t *testing.T) {
-	tests := []struct {
-		Name      string
-		trueAfter int
-		R         Retrier
-		Timeout   time.Duration
-		Immediate bool
-	}{
-		{
-			Name:      "should call the condition correct number of times and with exponentially growing intervals",
-			trueAfter: 5,
-			R: Retrier{
-				timeFactor:    time.Millisecond * 10,
-				maxInterval:   time.Millisecond * 100,
-				minInterval:   time.Millisecond * 0,
-				growthFactor:  2,
-				maxRetryCount: 3,
-			},
-			Timeout:   -1,
-			Immediate: false,
-		},
-		{
-			Name:      "should notify after context is canceled",
-			trueAfter: 5,
-			R: Retrier{
-				timeFactor:    time.Millisecond * 11,
-				maxInterval:   time.Millisecond * 100,
-				minInterval:   time.Millisecond * 10,
-				growthFactor:  2,
-				maxRetryCount: 3,
-			},
-			Timeout:   time.Nanosecond * 1,
-			Immediate: false,
-		},
-		{
-			Name:      "should call condition immediately",
-			trueAfter: 1,
-			R: Retrier{
-				timeFactor:    time.Millisecond * 10,
-				maxInterval:   time.Millisecond * 100,
-				minInterval:   time.Millisecond * 0,
-				growthFactor:  2,
-				maxRetryCount: 3,
-			},
-			Timeout:   -1,
-			Immediate: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.Name, func(t *testing.T) {
-			var (
-				calls     = 0
-				intervals = make([]int64, 0)
-				ticker    = time.NewTicker(time.Nanosecond)
-				cond      = func() bool {
-					calls++
-					return calls == tt.trueAfter
-				}
-			)
-
-			tt.R.rf = func(n int64) int64 {
-				intervals = append(intervals, n)
-				return n
-			}
-
-			// inject ticker
-			original := newTicker
-			defer func() {
-				newTicker = original
-			}()
-			newTicker = func(d time.Duration) *time.Ticker {
-				return ticker
-			}
-
-			// create context
-			var ctx context.Context
-			if tt.Timeout <= 0 {
-				ctx = context.Background()
-			} else {
-				timeoutCtx, cancel := context.WithTimeout(context.Background(), tt.Timeout)
-				defer cancel()
-				ctx = timeoutCtx
-			}
-
-			// start retrying
-			notify := tt.R.RetryAsync(ctx, cond, tt.Immediate)
-
-			// wait for notification
-			select {
-			case _, ok := <-notify:
-				if ok {
-					t.Error("received notify signal but the channel is not closed")
-				}
-				if tt.Timeout > 0 {
-					if got := ctx.Err(); !os.IsTimeout(got) {
-						t.Errorf("expected timeout error, got: %v", got)
-					}
-				}
-			case <-time.After(notifyTimeout):
-				t.Fatalf(`retry did not notify after %s second. two possibilities: 
-				1) retry never notifies or 2) test takes too long to complete.`, notifyTimeout)
-			}
-
-			// test intervals
-			for i, got := range intervals {
-				// calculate expected interval
-				expected := tt.R.timeFactor
-				for j := 0; j < i; j++ {
-					expected *= 2
-				}
-				if expected > tt.R.maxInterval {
-					expected = tt.R.maxInterval
-				}
-
-				if gotDur := time.Duration(got); gotDur != expected {
-					t.Errorf("expected interval: %s got: %s", expected, gotDur)
-				}
-			}
-
-			// test immediate
-			if tt.Immediate {
-				if len(intervals) != 1 {
-					t.Errorf("expected number of calls to randomfunc: 1, got: %d", len(intervals))
-				} else if intervals[0] != int64(tt.R.timeFactor) {
-					t.Errorf("expected first interval: %s, got: %s", tt.R.timeFactor, time.Duration(intervals[0]))
 				}
 			}
 

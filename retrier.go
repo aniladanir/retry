@@ -20,6 +20,8 @@ type Retrier struct {
 	rf RandomFunc
 	// pre-calculated value based on the given configuration that indicates max number of retries before reaching maximum interval.
 	maxRetryCount int
+	// MaxAttempts sets maximum number of attempts before retrier terminates.
+	maxAttempts int
 }
 
 // Validate checks the configuration for invalid values
@@ -55,6 +57,7 @@ const (
 	DefaultMinInterval  = time.Millisecond * 0
 	DefaultMaxInterval  = time.Millisecond * 32000
 	DefaultGrowthFactor = 2
+	DefaultMaxAttempts  = 0
 )
 
 var newTicker = func(d time.Duration) *time.Ticker {
@@ -77,6 +80,7 @@ func New(options ...Option) (*Retrier, error) {
 		maxInterval:  DefaultMaxInterval,
 		growthFactor: DefaultGrowthFactor,
 		rf:           DefaultRandomFunc(),
+		maxAttempts:  DefaultMaxAttempts,
 	}
 	for _, o := range options {
 		o(r)
@@ -98,31 +102,18 @@ func New(options ...Option) (*Retrier, error) {
 
 // Retry executes the condition until it is satisfied.
 //
-// Notify channel will be closed right after the context gets canceled or the condition returns true.
+// Notify channel will be closed right after the context gets canceled, the condition returns true or max attempts is reached.
 //
-// If immediate is true, condition will be run immediately. If false, the condition will run after the first retry interval has passed
-func (r *Retrier) Retry(ctx context.Context, cond Condition, immediate bool) (notify <-chan struct{}) {
-	ch := make(chan struct{})
+// If immediate is true, condition will be run immediately. If false, the condition will run after the first retry interval has passed.
+func (r *Retrier) Retry(ctx context.Context, cond Condition, immediate bool) (notify <-chan bool) {
+	ch := make(chan bool)
 
 	go r.retry(ctx, cond, ch, immediate)
 
 	return ch
 }
 
-// RetryAsync executes the condition parallel to the timer.
-//
-// Notify channel will be closed right after the context gets canceled or the condition returns true.
-//
-// If immediate is true, condition will be run immediately. If false, the condition will run after the first retry interval has passed
-func (r *Retrier) RetryAsync(ctx context.Context, cond Condition, immediate bool) (notify <-chan struct{}) {
-	ch := make(chan struct{})
-
-	go r.retryAsync(ctx, cond, ch, immediate)
-
-	return ch
-}
-
-func (r *Retrier) retry(ctx context.Context, cond Condition, ch chan<- struct{}, immediate bool) {
+func (r *Retrier) retry(ctx context.Context, cond Condition, ch chan<- bool, immediate bool) {
 	var (
 		ticker  *time.Ticker
 		attempt = 0
@@ -138,6 +129,7 @@ func (r *Retrier) retry(ctx context.Context, cond Condition, ch chan<- struct{},
 
 	if immediate {
 		if cond() {
+			ch <- true
 			return
 		}
 	}
@@ -147,50 +139,20 @@ func (r *Retrier) retry(ctx context.Context, cond Condition, ch chan<- struct{},
 
 		select {
 		case <-ctx.Done():
+			ch <- false
 			return
 		case <-ticker.C:
 			if cond() {
+				ch <- true
 				return
 			}
 			stopAndDrainTicker(ticker)
 			attempt++
 		}
-	}
-}
 
-func (r *Retrier) retryAsync(ctx context.Context, cond Condition, ch chan<- struct{}, immediate bool) {
-	var (
-		ticker  *time.Ticker
-		attempt = 0
-	)
-
-	defer func() {
-		close(ch)
-		ticker.Stop()
-	}()
-
-	ticker = newTicker(time.Nanosecond)
-	stopAndDrainTicker(ticker)
-
-	if !immediate {
-		ticker.Reset(r.next(attempt))
-		<-ticker.C
-		attempt++
-	}
-
-	for {
-		ticker.Reset(r.next(attempt))
-
-		if cond() {
+		if r.maxAttempts > 0 && attempt >= r.maxAttempts {
+			ch <- false
 			return
-		}
-		attempt++
-
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			stopAndDrainTicker(ticker)
 		}
 	}
 }

@@ -38,3 +38,10 @@ func WithRandomFunc(rf RandomFunc) Option {
 		c.rf = rf
 	}
 }
+
+// WithMaxAttemps sets number of attemps before retries terminates.
+func WithMaxAttemps(maxAttempts int) Option {
+	return func(c *Retrier) {
+		c.maxAttempts = maxAttempts
+	}
+}
