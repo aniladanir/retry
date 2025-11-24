@@ -21,7 +21,7 @@ func main() {
 
 	success := <-r.Retry(
 		context.Background(),
-		func() bool {
+		func(attempt int) bool {
 			_, err = http.DefaultClient.Get("https://www.google.com")
 			return err == nil
 		},

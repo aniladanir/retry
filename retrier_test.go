@@ -75,8 +75,11 @@ func TestRetry(t *testing.T) {
 				calls     = 0
 				intervals = make([]int64, 0)
 				ticker    = time.NewTicker(time.Nanosecond)
-				cond      = func() bool {
+				cond      = func(attempt int) bool {
 					calls++
+					if attempt != calls {
+						t.Fatal("attempt value does not match the number of calls")
+					}
 					return calls == tt.trueAfter
 				}
 			)
