@@ -49,7 +49,9 @@ func (r *Retrier) Validate() error {
 type RandomFunc func(n int64) int64
 
 // Condition represents a function that returns a boolean value which decides if retrier should terminate or not.
-type Condition func() bool
+//
+// attempt value starts from 1 and indicates the number of times the condition is called
+type Condition func(attempt int) bool
 
 // Default configuration values
 const (
@@ -116,7 +118,7 @@ func (r *Retrier) Retry(ctx context.Context, cond Condition, immediate bool) (no
 func (r *Retrier) retry(ctx context.Context, cond Condition, ch chan<- bool, immediate bool) {
 	var (
 		ticker  *time.Ticker
-		attempt = 0
+		retries = 0
 	)
 
 	defer func() {
@@ -128,42 +130,43 @@ func (r *Retrier) retry(ctx context.Context, cond Condition, ch chan<- bool, imm
 	stopAndDrainTicker(ticker)
 
 	if immediate {
-		if cond() {
+		if cond(retries + 1) {
 			ch <- true
 			return
 		}
+		retries++
 	}
 
 	for {
-		ticker.Reset(r.next(attempt))
+		if r.maxAttempts > 0 && retries >= r.maxAttempts {
+			ch <- false
+			return
+		}
+
+		ticker.Reset(r.next(retries))
 
 		select {
 		case <-ctx.Done():
 			ch <- false
 			return
 		case <-ticker.C:
-			if cond() {
+			if cond(retries + 1) {
 				ch <- true
 				return
 			}
 			stopAndDrainTicker(ticker)
-			attempt++
-		}
-
-		if r.maxAttempts > 0 && attempt >= r.maxAttempts {
-			ch <- false
-			return
+			retries++
 		}
 	}
 }
 
-func (r *Retrier) next(attempt int) time.Duration {
+func (r *Retrier) next(retries int) time.Duration {
 	var backoff time.Duration
 
-	if r.maxRetryCount < attempt {
+	if r.maxRetryCount < retries {
 		backoff = r.maxInterval
 	} else {
-		backoff = time.Duration(intPow(r.growthFactor, attempt)) * r.timeFactor
+		backoff = time.Duration(intPow(r.growthFactor, retries)) * r.timeFactor
 	}
 
 	return jitter(r.rf, r.minInterval, backoff)
